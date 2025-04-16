@@ -45,7 +45,8 @@ def decrypt(code, private_key):
     d, n = private_key
     return ''.join([chr(pow(char, d, n)) for char in code])
 
-def main(length):
+def main():
+    length = 50
     half_bit_length = length // 2
     while True:
         p = random.randint(2**(half_bit_length-1), 2**half_bit_length-1)

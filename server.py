@@ -1,6 +1,6 @@
 import socket
 import threading
-
+import rsa
 class Server:
 
     def __init__(self, port: int) -> None:
@@ -14,7 +14,7 @@ class Server:
         self.s.bind((self.host, self.port))
         self.s.listen(100)
 
-        # generate keys ...
+        self.public_key, self.private_key = rsa.main()
 
         while True:
             c, addr = self.s.accept()
@@ -26,11 +26,11 @@ class Server:
 
             # send public key to the client 
 
-            # ...
+            c.send(f"{self.public_key[0]},{self.public_key[1]}".encode())
 
             # encrypt the secret with the clients public key
 
-            # ...
+            client_public_key_raw = c.recv(1024).decode()
 
             # send the encrypted secret to a client 
 
@@ -40,12 +40,11 @@ class Server:
 
     def broadcast(self, msg: str):
         for client in self.clients: 
+            key = self.username_lookup[client]['public_key']
+            encrypted_msg = rsa.encrypt(msg, key)
+            encoded = ' '.join(map(str, encrypted_msg)).encode()
 
-            # encrypt the message
-
-            # ...
-
-            client.send(msg.encode())
+            client.send(msg.rsa.encode())
 
     def handle_client(self, c: socket, addr): 
         while True:

@@ -1,3 +1,5 @@
+import hashlib
+import os
 import socket
 import threading
 import rsa
@@ -8,6 +10,7 @@ class Server:
         self.port = port
         self.clients = []
         self.username_lookup = {}
+        self.session_keys = {}
         self.s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
 
     def start(self):
@@ -24,35 +27,56 @@ class Server:
             self.username_lookup[c] = username
             self.clients.append(c)
 
-            # send public key to the client 
+            # send public key to the client
 
             c.send(f"{self.public_key[0]},{self.public_key[1]}".encode())
 
-            # encrypt the secret with the clients public key
 
             client_public_key_raw = c.recv(1024).decode()
+            client_public_key = tuple(map(int, client_public_key_raw.split(',')))
 
-            # send the encrypted secret to a client 
+            session_key = os.urandom(32)
+            self.session_keys[c] = session_key
 
-            # ...
+            # encrypt the secret with the clients public key
+            encrypted_session_key = rsa.encrypt(session_key.decode('latin1'), client_public_key)
+
+            # send the encrypted secret to a client
+            c.send(' '.join(map(str, encrypted_session_key)).encode())
 
             threading.Thread(target=self.handle_client,args=(c,addr,)).start()
 
     def broadcast(self, msg: str):
         for client in self.clients: 
-            key = self.username_lookup[client]['public_key']
-            encrypted_msg = rsa.encrypt(msg, key)
-            encoded = ' '.join(map(str, encrypted_msg)).encode()
+            session_key = self.session_keys[client]
 
-            client.send(msg.rsa.encode())
+            # encrypt the message
+            msg_hash = hashlib.sha3_512(msg.encode()).hexdigest()
+            encrypted_msg = rsa.encrypt(msg, session_key)
+
+            client.send(f"{msg_hash}|{' '.join(map(str, encrypted_msg))}".encode())
 
     def handle_client(self, c: socket, addr): 
+        session_key = self.session_keys[c]
+
         while True:
-            msg = c.recv(1024)
+            data = c.recv(2048).decode()
+            if not data:
+                break
+
+            received_hash, encrypted_msg_raw = data.split('|')
+            encrypted_msg = list(map(int, encrypted_msg_raw.split()))
+
+            decrypted_msg = rsa.decrypt(encrypted_msg, session_key)
+
+            calculated_hash = hashlib.sha3_512(decrypted_msg.encode()).hexdigest()
+            if calculated_hash != received_hash:
+                print("Message integrity check failed!")
+                continue
 
             for client in self.clients:
                 if client != c:
-                    client.send(msg)
+                    self.broadcast(decrypted_msg)
 
 if __name__ == "__main__":
     s = Server(9001)

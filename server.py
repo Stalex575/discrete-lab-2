@@ -46,37 +46,28 @@ class Server:
 
             threading.Thread(target=self.handle_client,args=(c,addr,)).start()
 
-    def broadcast(self, msg: str):
-        for client in self.clients: 
+    def broadcast(self, msg: str, exclude_client=None):
+        for client in self.clients:
+            if client == exclude_client:
+                continue
             session_key = self.session_keys[client]
-
-            # encrypt the message
             msg_hash = hashlib.sha3_512(msg.encode()).hexdigest()
-            encrypted_msg = rsa.encrypt(msg, session_key)
+            encrypted_msg = ''.join(chr(ord(c) ^ session_key[i % len(session_key)]) for i, c in enumerate(msg))
+            client.send(f"{msg_hash}|{encrypted_msg}".encode())
 
-            client.send(f"{msg_hash}|{' '.join(map(str, encrypted_msg))}".encode())
-
-    def handle_client(self, c: socket, addr): 
+    def handle_client(self, c: socket, addr):
         session_key = self.session_keys[c]
-
         while True:
             data = c.recv(2048).decode()
             if not data:
                 break
-
-            received_hash, encrypted_msg_raw = data.split('|')
-            encrypted_msg = list(map(int, encrypted_msg_raw.split()))
-
-            decrypted_msg = rsa.decrypt(encrypted_msg, session_key)
-
+            received_hash, encrypted_msg = data.split('|')
+            decrypted_msg = ''.join(chr(ord(ch) ^ session_key[i % len(session_key)]) for i, ch in enumerate(encrypted_msg))
             calculated_hash = hashlib.sha3_512(decrypted_msg.encode()).hexdigest()
             if calculated_hash != received_hash:
                 print("Message integrity check failed!")
                 continue
-
-            for client in self.clients:
-                if client != c:
-                    self.broadcast(decrypted_msg)
+            self.broadcast(f"{self.username_lookup[c]}: {decrypted_msg}", exclude_client=c)
 
 if __name__ == "__main__":
     s = Server(9001)
